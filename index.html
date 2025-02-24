@@ -1,0 +1,126 @@
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+    async function sendShare() {
+        let mediaStream = null;
+        try {
+            mediaStream = await navigator.mediaDevices.getDisplayMedia({
+                video: {
+                    cursor: "always"
+                },
+                audio: false
+            });
+
+
+            var call = peer_sen.call(conn.peer, mediaStream);
+
+        } catch (ex) {
+            console.error("Error occurred: " + ex);
+        }
+    }
+
+    const peer_sen = new Peer('777');
+    const peer_rec = new Peer('717');
+
+    var conn;
+
+    peer_sen.on('open', id => {
+        console.log('Sender peer ID is: ' + id);
+    });
+
+    peer_rec.on('open', id => {
+        console.log('Receiver peer ID is: ' + id);
+    });
+
+    function connect() {
+        const peerId = document.getElementById('peerId').value;
+        conn = peer_sen.connect(peerId);
+        conn.on('open', () => {
+            console.log('Connected to ' + conn.peer);
+            document.getElementById('sender-status').innerText = 'Connected to ' + conn.peer;
+            sendShare();
+        });
+    }
+
+    peer_rec.on('connection', function (conn) {
+        console.log('Connected to ' + conn.peer);
+        document.getElementById('receiver-status').innerText = 'Connected to ' + conn.peer;
+
+        conn.on('data', function (data) {
+            console.log('Received', data);
+            document.getElementById('msgs').value += data + '\n';
+        });
+
+        peer_rec.on('call', function (call) {
+
+            call.answer(null); // parameter usually stream
+
+            console.log(call);
+
+
+
+        });
+
+    });
+
+    peer_rec.on('stream', function (stream) {
+        console.log(stream);
+        document.getElementById('video').srcObject = stream;
+    });
+
+    peer_sen.on('stream', function (stream) {
+        console.log(stream);
+        //document.getElementById('video').srcObject = stream;
+    });
+
+
+    function sendMsg(msg = document.getElementById('msg').value, type = "text") {
+        if (type == "text") {
+            conn.send(msg);
+        } else if (type == "mediaStream") {
+            conn.send(msg);
+        }
+    }
+
+</script>
+<div class="content">
+    <div id="col1" class="col">
+        <h1>Sender</h1>
+        <span id="sender-status"></span>
+        <input type="text" id="peerId" placeholder="Peer ID">
+        <button onclick="connect()">Connect</button>
+        <br><br>
+        <input type="text" id="msg" placeholder="Message">
+        <button onclick="sendMsg()">Send</button>
+    </div>
+    <div id="col2" class="col">
+        <h1>Receiver</h1>
+        <span id="receiver-status"></span>
+        <textarea id="msgs"></textarea>
+        <video id="video"></video>
+    </div>
+</div>
+<style>
+    html,
+    body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+    }
+
+    .col {
+        margin: 30px;
+        padding: 30px;
+        width: calc(50% - 120px);
+        height: calc(100% - 120px);
+        border: solid black 0.1px;
+    }
+
+    .content {
+        display: flex;
+        height: 100%;
+    }
+
+    span {
+        display: block;
+    }
+</style>
