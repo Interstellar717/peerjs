@@ -1,5 +1,9 @@
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
+    const qs = (selector) => document.querySelector(selector);
+    const qsa = (selector) => document.querySelectorAll(selector);
+
+    var connSendMedia;
     async function sendShare() {
         let mediaStream = null;
         try {
@@ -10,75 +14,113 @@
                 audio: false
             });
 
+            connSendMedia = peer_sen.call(connSend.peer, mediaStream);
 
-            var call = peer_sen.call(conn.peer, mediaStream);
+            connSendMedia.on('stream', (_) => {
+                console.log(`Send stream recieved`);
+            })
+            connSendMedia.on('close', function () {
+                console.log('SMedia conn close');
+            });
+            connSendMedia.on('error', (err) => { console.log(`SMedia connection error ${err}`) })
 
         } catch (ex) {
             console.error("Error occurred: " + ex);
         }
     }
 
-    const peer_sen = new Peer('777');
-    const peer_rec = new Peer('717');
+    var peer_sen;
+    var peer_rec;
 
-    var conn;
+    var connSend;
 
-    peer_sen.on('open', id => {
-        console.log('Sender peer ID is: ' + id);
-    });
 
-    peer_rec.on('open', id => {
-        console.log('Receiver peer ID is: ' + id);
-    });
 
     function connect() {
         const peerId = document.getElementById('peerId').value;
-        conn = peer_sen.connect(peerId);
-        conn.on('open', () => {
-            console.log('Connected to ' + conn.peer);
-            document.getElementById('sender-status').innerText = 'Connected to ' + conn.peer;
+        connSend = peer_sen.connect(peerId);
+        console.log(connSend)
+        connSend.on('open', () => { // emitted when data connection is established and ready to use
+            console.log('Sender connected to ' + connSend.peer);
+            document.getElementById('sender-status').innerText = 'Connected to ' + connSend.peer;
             sendShare();
         });
+        connSend.on('data', (data) => {
+            console.log(`sender recieved data ${data}`)
+        })
+        connSend.on('closed', () => { console.log(`Sender data connection closed`) })
     }
 
-    peer_rec.on('connection', function (conn) {
-        console.log('Connected to ' + conn.peer);
-        document.getElementById('receiver-status').innerText = 'Connected to ' + conn.peer;
 
-        conn.on('data', function (data) {
-            console.log('Received', data);
-            document.getElementById('msgs').value += data + '\n';
+
+
+
+
+    function sendMsg(msg = document.getElementById('msg').value) {
+        connSend.send(msg);
+    }
+
+
+    function setSen(id) {
+        peer_sen = new Peer(id);
+
+        peer_sen.on('open', id => {
+            console.log('Sender peer ID is: ' + id);
+            qsa('h1')[0].innerText += " (active #" + id + ")"
         });
-
-        peer_rec.on('call', function (call) {
-
-            call.answer(null); // parameter usually stream
-
-            console.log(call);
-
-
-
+        peer_sen.on('close', function () {
+            console.log('Connection destroyed');
         });
+        peer_sen.on('error', function (err) {
+            console.log(err)
+        })
+    }
 
-    });
+    function setRec(id) {
+        peer_rec = new Peer(id);
+        peer_rec.on('open', id => {
+            console.log('Receiver peer ID is: ' + id);
+            qsa('h1')[1].innerText += " (active #" + id + ")";
+            // document.getElementById('msgs').value += 'Peer#' + id + ' active' + '\n';
+        });
+        peer_rec.on('connection', function (connRec) {
+            console.log('Reciever connected to ' + connRec.peer);
+            document.getElementById('receiver-status').innerText = 'Connected to ' + connRec.peer;
 
-    peer_rec.on('stream', function (stream) {
-        console.log(stream);
-        document.getElementById('video').srcObject = stream;
-    });
+            console.log(connRec);
+            
+            connSend && 
+                connSend.on('open', () => { console.log(`Reciever connection open`) });
 
-    peer_sen.on('stream', function (stream) {
-        console.log(stream);
-        //document.getElementById('video').srcObject = stream;
-    });
+            connRec.on('data', function (data) {
+                console.log('Received', data);
+                document.getElementById('msgs').value += data + '\n';
+            });
 
-
-    function sendMsg(msg = document.getElementById('msg').value, type = "text") {
-        if (type == "text") {
-            conn.send(msg);
-        } else if (type == "mediaStream") {
-            conn.send(msg);
-        }
+            connSend && 
+                connSend.on('closed', () => { console.log(`Reciever data connection closed`) });
+        });
+        peer_rec.on('call', function (mcRec) {
+            mcRec.answer(null); // parameter usually stream
+            console.log(mcRec);
+            mcRec.on('stream', (_) => {
+                console.log(`Rec stream recieved`)
+                qs('#video').srcObject = _;
+            })
+            mcRec.on('close', function () {
+                console.log('RMedia conn close');
+            });
+            mcRec.on('error', (err) => { console.log(`RMedia connection error ${err}`) })
+        });
+        peer_rec.on('call', (mcRec) => {
+            console.log(`Reciever recieved media connection`)
+        })
+        peer_rec.on('close', function () {
+            console.log('Connection destroyed');
+        });
+        peer_rec.on('error', function (err) {
+            console.log(err)
+        });
     }
 
 </script>
@@ -86,7 +128,10 @@
     <div id="col1" class="col">
         <h1>Sender</h1>
         <span id="sender-status"></span>
-        <input type="text" id="peerId" placeholder="Peer ID">
+        <input type="text" id="peer1Id" placeholder="Peer1 ID" value="123">
+        <button onclick="setSen(qs('#peer1Id').value)">Set ID</button>
+        <br><br>
+        <input type="text" id="peerId" placeholder="Peer ID" value="456">
         <button onclick="connect()">Connect</button>
         <br><br>
         <input type="text" id="msg" placeholder="Message">
@@ -95,8 +140,11 @@
     <div id="col2" class="col">
         <h1>Receiver</h1>
         <span id="receiver-status"></span>
+        <input type="text" id="peer2Id" placeholder="Peer2 ID" value="456">
+        <button onclick="setRec(qs('#peer2Id').value)">Set ID</button>
+        <br><br>
         <textarea id="msgs"></textarea>
-        <video id="video"></video>
+        <video id="video" autoplay style="width: 100%;"></video>
     </div>
 </div>
 <style>
